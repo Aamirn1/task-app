@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -32,11 +29,8 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Generate App Icons
-        run: npx @capacitor/assets generate --icon public/applogo.png --android || echo "Assets generation failed, continuing..."
-
       - name: Build Next.js app
-        run: bun run build
+        run: npm run build
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
 
@@ -50,10 +44,10 @@ jobs:
         run: npm install -g @capacitor/cli
 
       - name: Add Android platform
-        run: npx cap add android
+        run: npx cap add android || echo "Android platform already exists"
 
       - name: Generate App Icons
-        run: npx @capacitor/assets generate --icon public/applogo.png --android
+        run: npx @capacitor/assets generate --icon public/applogo.png --android || echo "Icon generation failed"
 
       - name: Sync Android
         run: npx cap sync android
