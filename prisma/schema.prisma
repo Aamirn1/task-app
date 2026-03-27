@@ -1,0 +1,275 @@
+// NovaLuxe Task Management - Optimized Premium Database Schema
+// Version 2.0 - Aligned with Updated PRD
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Subscription tiers
+enum SubscriptionTier {
+  FREE        // Limited tasks (100)
+  PRO         // Higher limit (1000)
+  UNLIMITED   // No limits
+}
+
+// Task priority levels (UPDATED: Normal → Standard)
+enum TaskPriority {
+  CRITICAL    // Urgent, alarm-based notification
+  STANDARD    // Regular priority
+  FLEXIBLE    // Low priority, done when free
+}
+
+// Task status (UPDATED: Added SEEN)
+enum TaskStatus {
+  PENDING       // Task created, not yet viewed
+  SEEN          // Task viewed by assignee
+  IN_PROGRESS   // Task started
+  COMPLETED     // Task finished
+  EXPIRED       // Task passed expiry date
+}
+
+// User roles
+enum UserRole {
+  ADMIN     // Business owner/manager - can create tasks
+  MEMBER    // Worker/student - receives tasks
+}
+
+// Join request status
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Media type for task attachments
+enum MediaType {
+  AUDIO
+  IMAGE
+  DOCUMENT
+}
+
+// Business/Team model (renamed from Team for clarity)
+model Business {
+  id              String            @id @default(cuid())
+  name            String            // Business/Team name
+  founderName     String            // Founder's name
+  businessType    String            // company, school, team, organization, other
+  description     String?           // Business description
+  workerCount     Int               @default(0)
+  inviteCode      String            @unique  // 6-character join code
+  subscription    SubscriptionTier  @default(FREE)
+  taskLimit       Int               @default(100)
+  tasksUsed       Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  // Relations
+  members         User[]
+  groups          Group[]
+  tasks           Task[]
+  archivedTasks   TaskArchive[]
+  joinRequests    JoinRequest[]
+  
+  @@index([inviteCode])
+}
+
+// User model - can be admin or member
+model User {
+  id                    String   @id @default(cuid())
+  email                 String   @unique
+  name                  String
+  phone                 String?
+  password              String
+  role                  UserRole @default(MEMBER)
+  avatar                String?
+  pushToken             String?  // For push notifications
+  isDeleted             Boolean  @default(false)  // Soft delete flag
+  deletedFromBusinessId String?  // ID of business they were removed from
+  deletedAt             DateTime?  // When they were removed
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  // Relations
+  businessId            String?
+  business              Business?        @relation(fields: [businessId], references: [id])
+  createdTasks          Task[]           @relation("CreatedTasks")
+  assignments           Assignment[]
+  joinRequests          JoinRequest[]
+  groupMembers          GroupMember[]
+  notifications         Notification[]
+  
+  @@index([email])
+  @@index([businessId])
+}
+
+// Group for batch task assignment
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  businessId  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  members     GroupMember[]
+  tasks       Task[]
+  
+  @@index([businessId])
+}
+
+// Group membership
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime @default(now())
+  
+  // Relations
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+// Task model - Optimized for performance
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  priority    TaskPriority @default(STANDARD)
+  status      TaskStatus   @default(PENDING)
+  deadline    DateTime?    // Optional "complete by" time
+  expiresAt   DateTime     // Auto-delete after this time
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  businessId  String
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  creatorId   String
+  creator     User         @relation("CreatedTasks", fields: [creatorId], references: [id])
+  groupId     String?
+  group       Group?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  media       TaskMedia[]
+  assignments Assignment[]
+  notifications Notification[]
+  
+  @@index([businessId])
+  @@index([creatorId])
+  @@index([status])
+  @@index([priority])
+  @@index([expiresAt])
+}
+
+// Task Media - Separate table for attachments (URLs only, no file storage)
+model TaskMedia {
+  id          String     @id @default(cuid())
+  taskId      String
+  type        MediaType
+  url         String     // Cloud storage URL only
+  fileName    String?    // Original file name
+  fileSize    Int?       // File size in bytes
+  duration    Int?       // Audio duration in seconds
+  createdAt   DateTime   @default(now())
+  
+  // Relations
+  task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  @@index([taskId])
+}
+
+// Task assignment to users - Each user gets ONE assignment per task
+model Assignment {
+  id            String     @id @default(cuid())
+  taskId        String
+  userId        String
+  status        TaskStatus @default(PENDING)
+  seenAt        DateTime?  // When the task was first viewed
+  startedAt     DateTime?  // When work began
+  completedAt   DateTime?  // When completed
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  // Relations
+  task          Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([taskId, userId])  // Prevent duplicate assignments
+  @@index([taskId])
+  @@index([userId])
+  @@index([status])
+}
+
+// Join request for team onboarding
+model JoinRequest {
+  id        String            @id @default(cuid())
+  businessId String
+  userId    String
+  status    JoinRequestStatus @default(PENDING)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  
+  // Relations
+  business  Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([businessId, userId])
+  @@index([businessId])
+  @@index([userId])
+  @@index([status])
+}
+
+// Notification model - Auto-deleted after 14 days
+model Notification {
+  id          String     @id @default(cuid())
+  taskId      String?    // Optional - not all notifications are task-related
+  userId      String
+  type        String     // "CRITICAL_ALARM", "STANDARD_ALERT", "FLEXIBLE_ALERT", "REMINDER", "ESCALATION", "NEW_MEMBER", "REMOVED_FROM_TEAM"
+  title       String
+  message     String
+  read        Boolean    @default(false)
+  readAt      DateTime?
+  expiresAt   DateTime   // Auto-delete date (14 days from creation)
+  createdAt   DateTime   @default(now())
+  
+  // Relations
+  task        Task?      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@index([expiresAt])
+}
+
+// Task Archive - For completed/expired tasks (historical data)
+model TaskArchive {
+  id            String       @id @default(cuid())
+  originalId    String       // Original task ID
+  title         String
+  description   String?
+  priority      TaskPriority
+  finalStatus   TaskStatus
+  businessId    String
+  creatorId     String
+  completedBy   String?      // User ID who completed it
+  createdAt     DateTime     // Original creation time
+  archivedAt    DateTime     @default(now())
+  expiresAt     DateTime     // Original expiry
+  
+  // Relations
+  business      Business     @relation(fields: [businessId], references: [id])
+  
+  @@index([businessId])
+  @@index([archivedAt])
+  @@index([originalId])
+}
