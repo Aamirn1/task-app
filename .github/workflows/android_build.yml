@@ -18,21 +18,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Install dependencies
-        run: bun install
+        run: npm install
 
-      - name: Generate Prisma Client
-        run: npx prisma generate
-
-      - name: Build Next.js app
-        run: npm run build
-        env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      - name: Create dummy build folder
+        run: mkdir -p out && touch out/index.html
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -44,7 +34,7 @@ jobs:
         run: npm install -g @capacitor/cli
 
       - name: Add Android platform
-        run: npx cap add android || echo "Android platform already exists"
+        run: npx cap add android || echo "Android platform already added"
 
       - name: Generate App Icons
         run: npx @capacitor/assets generate --icon public/applogo.png --android || echo "Icon generation failed"

@@ -5,6 +5,10 @@ const config: CapacitorConfig = {
   appName: 'Task App',
   webDir: 'out',
   bundledWebRuntime: false,
+  server: {
+    url: 'https://task-app-aamir.vercel.app',
+    cleartext: true
+  }
 };
 
 export default config;
